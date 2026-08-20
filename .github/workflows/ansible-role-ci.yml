@@ -1,0 +1,179 @@
+name: Ansible Role CI
+
+on:
+  workflow_call:
+    inputs:
+      ansible_versions:
+        description: JSON array of ansible-core minor versions to test against
+        type: string
+        default: '["2.14","2.15","2.16","2.17","2.18","2.19","2.20","2.21"]'
+      lint_os:
+        description: JSON array of runner OSes for the lint matrix
+        type: string
+        default: '["ubuntu-latest","macos-latest"]'
+      e2e_os:
+        description: JSON array of runner OSes for the end-to-end install matrix
+        type: string
+        default: '["ubuntu-latest","macos-latest"]'
+      e2e_python_version:
+        description: Python version used to install ansible-core for the end-to-end job
+        type: string
+        default: '3.14'
+
+jobs:
+  lint:
+    name: Lint (${{ matrix.os }}, ansible-core ${{ matrix.ansible_version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJson(inputs.lint_os) }}
+        ansible_version: ${{ fromJson(inputs.ansible_versions) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Determine Python version
+        id: python
+        run: |
+          case "${{ matrix.ansible_version }}" in
+            2.14|2.15) echo "version=3.9" >> "$GITHUB_OUTPUT" ;;
+            2.16|2.17) echo "version=3.10" >> "$GITHUB_OUTPUT" ;;
+            2.18|2.19) echo "version=3.11" >> "$GITHUB_OUTPUT" ;;
+            *) echo "version=3.14" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ steps.python.outputs.version }}
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          [ -f requirements.txt ] && pip install -r requirements.txt
+          [ -f test-requirements.txt ] && pip install -r test-requirements.txt
+          pip install "ansible-core==${{ matrix.ansible_version }}.*" ansible-lint
+
+      - name: Run ansible-lint
+        run: ansible-lint
+
+  molecule:
+    name: Molecule test (ansible-core ${{ matrix.ansible_version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ansible_version: ${{ fromJson(inputs.ansible_versions) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Detect molecule scenario
+        id: detect
+        run: |
+          if [ -f molecule/default/molecule.yml ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Determine Python version
+        id: python
+        if: steps.detect.outputs.exists == 'true'
+        run: |
+          case "${{ matrix.ansible_version }}" in
+            2.14|2.15) echo "version=3.9" >> "$GITHUB_OUTPUT" ;;
+            2.16|2.17) echo "version=3.10" >> "$GITHUB_OUTPUT" ;;
+            2.18|2.19) echo "version=3.11" >> "$GITHUB_OUTPUT" ;;
+            *) echo "version=3.14" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Set up Python
+        if: steps.detect.outputs.exists == 'true'
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ steps.python.outputs.version }}
+
+      - name: Install dependencies
+        if: steps.detect.outputs.exists == 'true'
+        run: |
+          pip install --upgrade pip
+          pip install "ansible-core==${{ matrix.ansible_version }}.*" molecule "molecule-plugins[docker]"
+          ansible-galaxy collection install community.docker
+          [ -f molecule/default/requirements.txt ] && pip install -r molecule/default/requirements.txt
+
+      - name: Run molecule test
+        if: steps.detect.outputs.exists == 'true'
+        run: molecule test
+
+      - name: Publish test report
+        uses: mikepenz/action-junit-report@v6
+        if: always() && steps.detect.outputs.exists == 'true'
+        with:
+          report_paths: 'molecule/default/reports/*.xml'
+
+  end2end:
+    name: End-to-end install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs:
+      - lint
+      - molecule
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJson(inputs.e2e_os) }}
+    env:
+      ANSIBLE_ROLES_PATH: ${{ github.workspace }}/..
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Detect end-to-end scenario
+        id: detect
+        run: |
+          if [ -f tests/e2e/playbook.yml ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python
+        if: steps.detect.outputs.exists == 'true'
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ inputs.e2e_python_version }}
+
+      - name: Install Ansible
+        if: steps.detect.outputs.exists == 'true'
+        run: |
+          pip install --upgrade pip
+          pip install ansible-core
+
+      - name: Install role end-to-end
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: tests/e2e
+        run: ansible-playbook playbook.yml -i "localhost," --connection=local
+
+      - name: Verify install
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: tests/e2e
+        run: ansible-playbook verify.yml -i "localhost," --connection=local
+
+  build-results:
+    name: Build results
+    if: always()
+    runs-on: ubuntu-latest
+    needs:
+      - lint
+      - molecule
+      - end2end
+    steps:
+      - run: exit 1
+        # see https://stackoverflow.com/a/67532120/4907315
+        if: >-
+          ${{
+                contains(needs.*.result, 'failure')
+            || contains(needs.*.result, 'cancelled')
+                || contains(needs.*.result, 'skipped')
+                }}
