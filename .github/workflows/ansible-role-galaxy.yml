@@ -1,0 +1,20 @@
+name: Ansible Role Galaxy Release
+
+on:
+  workflow_call:
+    secrets:
+      ANSIBLE_GALAXY_API_TOKEN:
+        description: "API token for the Ansible Galaxy namespace this role publishes to"
+        required: true
+
+jobs:
+  release:
+    name: Publish to Ansible Galaxy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Ansible Galaxy Import
+        run: |
+          curl -X POST "https://galaxy.ansible.com/api/v1/imports/" \
+            -H "Authorization: Token ${{ secrets.ANSIBLE_GALAXY_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"repository\": \"https://github.com/${{ github.repository }}\"}"

@@ -85,6 +85,33 @@ jobs:
 it must be defined under that exact name in the calling repo or its org. `app_id` is a
 `vars.*` value, not a secret, so it's passed explicitly via `with:` rather than inherited.
 
+## ansible-role-galaxy.yml
+
+Publishes a role to Ansible Galaxy by triggering a Galaxy import against the calling repo,
+on tag push. The repository URL is derived from `github.repository` (always `owner/repo`
+for whichever repo calls this workflow) rather than hardcoded, so the same file works
+unmodified across every role repo.
+
+```yaml
+# .github/workflows/ansible-galaxy.yml
+name: Release Role to Ansible Galaxy
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  release:
+    uses: m13tLabs/gh-actions-templates/.github/workflows/ansible-role-galaxy.yml@main
+    secrets: inherit
+```
+
+### Secrets
+
+`secrets: inherit` forwards `ANSIBLE_GALAXY_API_TOKEN`, which must be defined under that
+exact name in the calling repo or its org.
+
 ## Versioning
 
 Callers pin a ref after `@` — `@main` tracks the latest, or pin a tag (e.g. `@v1`) for
