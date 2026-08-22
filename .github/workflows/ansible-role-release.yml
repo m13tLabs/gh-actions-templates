@@ -5,17 +5,19 @@ on:
     inputs:
       release_type:
         description: 'Type of release to build: patch, minor, major, or custom'
-        type: string
+        options:
+          - patch
+          - minor
+          - major
+          - custom
+        default: patch
+        type: choice
         required: true
       custom_version:
         description: "Version to release (only used when release_type is 'custom', e.g. 1.2.3)"
         type: string
         required: false
         default: ''
-      app_id:
-        description: 'GitHub App ID used to mint the release commit/PR token'
-        type: string
-        required: true
       default_branch:
         description: 'Branch to release from and push commits/tags back to'
         type: string
@@ -49,7 +51,7 @@ jobs:
       - uses: actions/create-github-app-token@v3
         id: app-token
         with:
-          app-id: ${{ inputs.app_id }}
+          client-id: ${{ vars.CI_CLIENT_ID }}
           private-key: ${{ secrets.CI_PRIVATE_KEY }}
 
       - name: Checkout
