@@ -1,0 +1,7 @@
+---
+- name: Install fixture role
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: Run fixture role tasks
+      ansible.builtin.import_tasks: ../../tasks/main.yml

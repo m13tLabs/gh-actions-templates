@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: fixture
+  namespace: m13tlabs
+  author: m13tLabs
+  description: >-
+    Minimal fixture role used only to self-test the ansible-role-ci.yml
+    reusable workflow in this repo. Not a real, publishable role.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Debian
+      versions:
+        - all
+    - name: EL
+      versions:
+        - all
+
+dependencies: []

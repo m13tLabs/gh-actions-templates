@@ -1,0 +1,4 @@
+---
+- name: Fixture task
+  ansible.builtin.debug:
+    msg: gh-actions-templates fixture role

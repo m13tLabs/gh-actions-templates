@@ -102,6 +102,7 @@ jobs:
           pip install "ansible-core==${{ matrix.ansible_version }}.*" molecule "molecule-plugins[docker]"
           ansible-galaxy collection install community.docker
           [ -f molecule/default/requirements.txt ] && pip install -r molecule/default/requirements.txt
+          true
 
       - name: Run molecule test
         if: steps.detect.outputs.exists == 'true'

@@ -112,6 +112,19 @@ jobs:
 `secrets: inherit` forwards `ANSIBLE_GALAXY_API_TOKEN`, which must be defined under that
 exact name in the calling repo or its org.
 
+## Validating changes to this repo
+
+- `lint.yml` runs [actionlint](https://github.com/rhysd/actionlint) on every push/PR to catch
+  workflow syntax errors, invalid `workflow_call` schemas, and bad action inputs before they
+  ship.
+- `self-test.yml` calls `ansible-role-ci.yml` against a minimal fixture Ansible role checked
+  into this repo's root (`tasks/`, `meta/`, `molecule/default/`, `tests/e2e/`, `.ansible-lint`)
+  to verify the lint/molecule/e2e jobs actually run end-to-end, not just that the YAML parses.
+  It's not a publishable role — it only exists to exercise the CI template.
+- `ansible-role-release.yml` and `ansible-role-galaxy.yml` are not self-tested automatically
+  since they push commits/tags and create real releases; validate changes to those by pinning
+  a real consumer repo's caller workflow to your branch/PR SHA before merging.
+
 ## Versioning
 
 Callers pin a ref after `@` — `@main` tracks the latest, or pin a tag (e.g. `@v1`) for

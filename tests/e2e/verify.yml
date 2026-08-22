@@ -1,0 +1,8 @@
+---
+- name: Verify fixture role
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: Assert fixture ran
+      ansible.builtin.debug:
+        msg: fixture role verified
