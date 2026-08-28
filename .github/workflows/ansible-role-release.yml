@@ -43,10 +43,7 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      packages: write
-      attestations: write
-      id-token: write
+      contents: read
     steps:
       - uses: actions/create-github-app-token@v3
         id: app-token
