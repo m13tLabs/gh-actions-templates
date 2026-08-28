@@ -72,7 +72,7 @@ jobs:
 
 | Input | Default | Description |
 | --- | --- | --- |
-| `release_type` | — (required) | `patch`, `minor`, `major`, or `custom` |
+| `release_type` | `"patch"` | `patch`, `minor`, `major`, or `custom` |
 | `custom_version` | `""` | Explicit version, required when `release_type: custom` |
 | `app_id` | — (required) | GitHub App ID; pass `${{ vars.CI_APP_ID }}` from the calling repo |
 | `default_branch` | `"develop"` | Branch released from and pushed back to |
