@@ -5,7 +5,11 @@ on:
     inputs:
       release_type:
         description: 'Type of release to build: patch, minor, major, or custom'
-        default: patch
+        type: string
+        required: false
+        default: 'patch'
+      app_id:
+        description: 'GitHub App ID whose private key is passed as the CI_PRIVATE_KEY secret'
         type: string
         required: true
       custom_version:
@@ -43,7 +47,7 @@ jobs:
       - uses: actions/create-github-app-token@v3
         id: app-token
         with:
-          client-id: ${{ vars.CI_CLIENT_ID }}
+          app-id: ${{ inputs.app_id }}
           private-key: ${{ secrets.CI_PRIVATE_KEY }}
 
       - name: Checkout
