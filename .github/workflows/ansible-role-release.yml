@@ -5,13 +5,8 @@ on:
     inputs:
       release_type:
         description: 'Type of release to build: patch, minor, major, or custom'
-        options:
-          - patch
-          - minor
-          - major
-          - custom
         default: patch
-        type: choice
+        type: string
         required: true
       custom_version:
         description: "Version to release (only used when release_type is 'custom', e.g. 1.2.3)"
