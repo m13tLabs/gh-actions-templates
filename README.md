@@ -112,6 +112,108 @@ jobs:
 `secrets: inherit` forwards `ANSIBLE_GALAXY_API_TOKEN`, which must be defined under that
 exact name in the calling repo or its org.
 
+## docker-ci.yml
+
+CI for a Docker image repo: `actionlint`, `hadolint`, and a single-arch `docker buildx`
+build that is loaded and smoke-tested. The smoke test is a shell one-liner supplied by the
+caller with `$IMAGE` set to the built local tag; set `smoke_test: ""` to skip it.
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+  merge_group:
+
+jobs:
+  ci:
+    uses: m13tLabs/gh-actions-templates/.github/workflows/docker-ci.yml@main
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    with:
+      image_name: openjarvis
+      smoke_test: docker run --rm "$IMAGE" --version
+```
+
+### Inputs
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `image_name` | `"ci-image"` | Local tag the CI build is loaded as |
+| `context` | `"."` | Docker build context |
+| `dockerfile` | `"Dockerfile"` | Dockerfile path, relative to `context` |
+| `build_args` | `""` | Newline-separated build args |
+| `smoke_test` | `docker run --rm "$IMAGE" --help` | Shell run with `$IMAGE` set; `""` skips it |
+| `runs_on` | `"ubuntu-latest"` | Runner for every job |
+
+## docker-release.yml
+
+Manual release for a Docker image repo: bumps the version file, updates `CHANGELOG.md` via
+`git-cliff`, builds a multi-arch image, pushes every image ref tagged `X.Y.Z` / `X.Y` /
+`latest`, attests build provenance per image, and creates a GitHub Release — authenticated
+as a GitHub App so the release commit can push to a protected default branch. Passes
+`APP_VERSION` and `BUILD_DATE` as build args.
+
+```yaml
+# .github/workflows/release.yml
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        type: choice
+        required: true
+        default: patch
+        options: [patch, minor, major, custom]
+      custom_version:
+        type: string
+        required: false
+
+jobs:
+  release:
+    uses: m13tLabs/gh-actions-templates/.github/workflows/docker-release.yml@main
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    with:
+      images: '["ghcr.io/m13tlabs/openjarvis","docker.io/m13t/openjarvis"]'
+      app_id: ${{ vars.CI_APP_ID }}
+      release_type: ${{ inputs.release_type }}
+      custom_version: ${{ inputs.custom_version }}
+      dockerhub: true
+    secrets: inherit
+```
+
+### Inputs
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `images` | — (required) | JSON array of image refs to tag, push and attest |
+| `app_id` | — (required) | GitHub App ID; pass `${{ vars.CI_APP_ID }}` from the calling repo |
+| `release_type` | `"patch"` | `patch`, `minor`, `major`, or `custom` |
+| `custom_version` | `""` | Explicit version, required when `release_type: custom` |
+| `default_branch` | `"develop"` | Branch released from and pushed back to |
+| `version_file` | `"config.json"` | JSON file with a top-level `version` key |
+| `context` | `"."` | Docker build context |
+| `dockerfile` | `"Dockerfile"` | Dockerfile path, relative to `context` |
+| `platforms` | `"linux/amd64,linux/arm64"` | Comma-separated build platforms |
+| `dockerhub` | `false` | Log in to Docker Hub before pushing |
+| `draft_release` | `true` | Create the GitHub Release as a draft |
+
+### Secrets
+
+`secrets: inherit` forwards `CI_PRIVATE_KEY` (the GitHub App's private key, required) and —
+when `dockerhub: true` — `DOCKER_HUB_USER` / `DOCKER_HUB_TOKEN`. GHCR uses the built-in
+`GITHUB_TOKEN`. `app_id` is a `vars.*` value, passed explicitly via `with:`.
+
 ## Validating changes to this repo
 
 - `lint.yml` runs [actionlint](https://github.com/rhysd/actionlint) on every push/PR to catch
@@ -121,9 +223,11 @@ exact name in the calling repo or its org.
   into this repo's root (`tasks/`, `meta/`, `molecule/default/`, `tests/e2e/`, `.ansible-lint`)
   to verify the lint/molecule/e2e jobs actually run end-to-end, not just that the YAML parses.
   It's not a publishable role — it only exists to exercise the CI template.
-- `ansible-role-release.yml` and `ansible-role-galaxy.yml` are not self-tested automatically
-  since they push commits/tags and create real releases; validate changes to those by pinning
-  a real consumer repo's caller workflow to your branch/PR SHA before merging.
+- `ansible-role-release.yml`, `ansible-role-galaxy.yml`, `docker-ci.yml` and
+  `docker-release.yml` are not self-tested automatically — the release/galaxy ones push
+  commits/tags and create real releases, and `docker-ci.yml` needs a real Dockerfile that
+  this repo's root (an Ansible role fixture) doesn't provide. Validate changes to those by
+  pinning a real consumer repo's caller workflow to your branch/PR SHA before merging.
 
 ## Versioning
 

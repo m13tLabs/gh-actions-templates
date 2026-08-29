@@ -1,6 +1,7 @@
 # gh-actions-templates
 
-Reusable GitHub Actions workflows (`workflow_call`) shared across m13tLabs Ansible role repos.
+Reusable GitHub Actions workflows (`workflow_call`) shared across m13tLabs repos — Ansible
+role repos and Docker image repos.
 See [README.md](README.md) for what each workflow does and how callers use it.
 
 ## Repo layout
@@ -8,9 +9,12 @@ See [README.md](README.md) for what each workflow does and how callers use it.
 - `.github/workflows/ansible-role-ci.yml` — lint/molecule/e2e CI template.
 - `.github/workflows/ansible-role-release.yml` — version bump, changelog, GitHub Release.
 - `.github/workflows/ansible-role-galaxy.yml` — Ansible Galaxy publish on tag push.
-- `.github/workflows/lint.yml` — actionlint, runs on every push/PR to this repo.
-- `.github/workflows/self-test.yml` — calls `ansible-role-ci.yml` against the fixture role
-  below, on every push/PR to this repo.
+- `.github/workflows/docker-ci.yml` — actionlint/hadolint/buildx-build-and-smoke-test CI
+  template for Docker image repos.
+- `.github/workflows/docker-release.yml` — version bump, changelog, multi-arch build,
+  push + per-image provenance attestation, GitHub Release.
+- `.github/workflows/pipeline.yml` — actionlint + self-test (`ansible-role-ci.yml` against the
+  fixture role below), runs on every push/PR to this repo.
 - `tasks/`, `meta/`, `molecule/default/`, `tests/e2e/`, `.ansible-lint` — a minimal, throwaway
   Ansible role checked into this repo's *root*, whose only purpose is giving `self-test.yml`
   something real to lint/converge/verify. It is not a publishable role. This repo is
@@ -31,6 +35,13 @@ alternative considered and rejected for now (more infra, needs cross-repo dispat
 push commits/tags and create real GitHub Releases / trigger real Galaxy imports, so running them
 against this repo automatically would be destructive. Validate changes to those by pointing a
 real consumer repo's caller workflow at your branch/PR SHA before merging.
+
+The `docker-*.yml` templates aren't self-tested either: `docker-release.yml` is destructive
+the same way, and `docker-ci.yml` needs a real `Dockerfile` at the caller's root, which this
+repo's root (an Ansible role fixture) isn't. Validate them against a real consumer repo
+(`openjarvis` is the first) pinned to your branch/PR SHA. `docker-ci.yml`'s smoke test is a
+caller-supplied shell one-liner with `$IMAGE` bound to the built local tag; `docker-release.yml`
+takes `images` as a JSON array and fans the provenance attestation out over it via a matrix.
 
 ## Validating changes
 
