@@ -22,6 +22,12 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-check
+          # actionlint's bundled action-input snapshot (even in v1.7.12) predates the
+          # `client-id` input on actions/create-github-app-token@v3. Drop these two
+          # -ignore lines once the bundled metadata catches up.
+          actionlint_flags: >-
+            -ignore 'input "client-id" is not defined in action "actions/create-github-app-token'
+            -ignore 'missing input "app-id" which is required by action "actions/create-github-app-token'
   self-test:
     name: Run against fixture role
     uses: ./.github/workflows/ansible-role-ci.yml
