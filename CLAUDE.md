@@ -39,15 +39,27 @@ real consumer repo's caller workflow at your branch/PR SHA before merging.
 The `docker-*.yml` templates aren't self-tested either: `docker-release.yml` is destructive
 the same way, and `docker-ci.yml` needs a real `Dockerfile` at the caller's root, which this
 repo's root (an Ansible role fixture) isn't. Validate them against a real consumer repo
-(`openjarvis` is the first) pinned to your branch/PR SHA. `docker-ci.yml`'s smoke test is a
-caller-supplied shell one-liner with `$IMAGE` bound to the built local tag; `docker-release.yml`
-takes `images` as a JSON array and fans the provenance attestation out over it via a matrix.
+(`openjarvis` is the first) pinned to your branch/PR SHA.
+
+- `docker-ci.yml` takes `dockerfiles` as a JSON array and matrixes the `hadolint` + build/
+  smoke-test jobs over it (one leg per Dockerfile, e.g. `Dockerfile` + `Dockerfile.gpu`).
+  The smoke test is a caller-supplied shell one-liner with `$IMAGE` bound to that leg's
+  built local tag.
+- `docker-release.yml` takes `images` as a JSON array and fans the provenance attestation
+  out over it via a matrix. `variant_dockerfile` (+ `variant_suffix`, default `-gpu`) adds a
+  second build/push of another Dockerfile with the same tag set plus the suffix; its steps
+  are gated on `inputs.variant_dockerfile != ''` and it gets a second attestation step
+  keyed off the `variant_digest` job output (empty string when the step is skipped).
 
 ## Validating changes
 
 ```sh
 # Workflow syntax / expressions / action-input schema / shellcheck on run: blocks
-actionlint .github/workflows/*.yml
+# (the two -ignore lines mask a stale actionlint metadata bug, see gotchas below)
+actionlint \
+  -ignore 'input "client-id" is not defined in action "actions/create-github-app-token' \
+  -ignore 'missing input "app-id" which is required by action "actions/create-github-app-token' \
+  .github/workflows/*.yml
 
 # Fixture role lint (profile: min, see .ansible-lint)
 ansible-lint
@@ -78,8 +90,13 @@ gitignored, don't check it in.
   schema and the workflow won't run at all when called.
 - An input can't be both `required: true` and carry a `default:` — the default is unreachable
   and actionlint flags it.
-- `actions/create-github-app-token@v3` takes `app-id` (required) + `private-key`. There is no
-  `client-id` input — that's a different action's convention, not this one's.
+- `actions/create-github-app-token@v3` authenticates with **either** `app-id` **or** `client-id`,
+  plus `private-key`. Both are valid (see the live `action.yml`). actionlint (through at least
+  v1.7.12) ships a stale bundled input snapshot that only knows `app-id`, so it falsely reports
+  `input "client-id" is not defined` and `missing input "app-id" which is required`. `pipeline.yml`
+  passes `-ignore` regexes for both messages to `reviewdog/action-actionlint`; local runs need the
+  same flags (`actionlint -ignore '... client-id ...' -ignore '... app-id ...'`). Drop the ignores
+  once actionlint refreshes its metadata.
 - `mikepenz/action-junit-report@v6`'s `require_tests` input defaults to `false`, so the
   "Publish test report" step in `ansible-role-ci.yml` won't fail the job just because the
   fixture role produces no JUnit XML — no need to wire up a junit callback for the fixture.

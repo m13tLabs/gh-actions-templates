@@ -4,26 +4,29 @@ on:
   workflow_call:
     inputs:
       image_name:
-        description: Local tag the CI build is loaded as (used only inside this workflow)
+        description: Local tag prefix the CI builds are loaded as (used only inside this workflow)
         type: string
         default: ci-image
       context:
         description: Docker build context passed to docker/build-push-action
         type: string
         default: '.'
-      dockerfile:
-        description: Path to the Dockerfile, relative to context
+      dockerfiles:
+        description: >-
+          JSON array of Dockerfile paths (relative to context). Each is linted
+          with hadolint and built + smoke-tested as its own matrix leg, e.g.
+          '["Dockerfile","Dockerfile.gpu"]'.
         type: string
-        default: Dockerfile
+        default: '["Dockerfile"]'
       build_args:
-        description: Newline-separated build args forwarded to the build
+        description: Newline-separated build args forwarded to every build
         type: string
         default: ''
       smoke_test:
         description: >-
           Shell run by the "Smoke test" step with $IMAGE set to the built local
-          tag. Defaults to `docker run --rm "$IMAGE" --help`. Set to an empty
-          string to skip the smoke test entirely.
+          tag, once per Dockerfile. Defaults to `docker run --rm "$IMAGE" --help`.
+          Set to an empty string to skip the smoke test entirely.
         type: string
         default: docker run --rm "$IMAGE" --help
       runs_on:
@@ -53,8 +56,12 @@ jobs:
           reporter: github-check
 
   hadolint:
-    name: hadolint
+    name: hadolint (${{ matrix.dockerfile }})
     runs-on: ${{ inputs.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile: ${{ fromJson(inputs.dockerfiles) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -62,11 +69,15 @@ jobs:
       - name: Lint Dockerfile
         uses: hadolint/hadolint-action@v3.5.0
         with:
-          dockerfile: ${{ inputs.dockerfile }}
+          dockerfile: ${{ inputs.context }}/${{ matrix.dockerfile }}
 
   build:
-    name: Build and smoke-test
+    name: Build and smoke-test (${{ matrix.dockerfile }})
     runs-on: ${{ inputs.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile: ${{ fromJson(inputs.dockerfiles) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -74,21 +85,28 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Local tag for this Dockerfile
+        id: prep
+        run: |
+          slug="$(printf '%s' '${{ matrix.dockerfile }}' | tr -c 'A-Za-z0-9_.-' '-')"
+          echo "slug=${slug}" >> "$GITHUB_OUTPUT"
+          echo "tag=${{ inputs.image_name }}:ci-${slug}" >> "$GITHUB_OUTPUT"
+
       - name: Build image
         uses: docker/build-push-action@v7
         with:
           context: ${{ inputs.context }}
-          file: ${{ inputs.context }}/${{ inputs.dockerfile }}
+          file: ${{ inputs.context }}/${{ matrix.dockerfile }}
           load: true
-          tags: ${{ inputs.image_name }}:ci
+          tags: ${{ steps.prep.outputs.tag }}
           build-args: ${{ inputs.build_args }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ steps.prep.outputs.slug }}
+          cache-to: type=gha,mode=max,scope=${{ steps.prep.outputs.slug }}
 
       - name: Smoke test
         if: inputs.smoke_test != ''
         env:
-          IMAGE: ${{ inputs.image_name }}:ci
+          IMAGE: ${{ steps.prep.outputs.tag }}
         run: ${{ inputs.smoke_test }}
 
   build-results:

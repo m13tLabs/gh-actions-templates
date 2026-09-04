@@ -45,6 +45,20 @@ on:
         type: string
         required: false
         default: Dockerfile
+      variant_dockerfile:
+        description: >-
+          Optional second Dockerfile (relative to context) built and pushed
+          alongside the main one, e.g. a GPU image. Its tags are the same
+          version / major.minor / latest set with `variant_suffix` appended, and
+          it gets its own provenance attestation. Empty disables the variant build.
+        type: string
+        required: false
+        default: ''
+      variant_suffix:
+        description: 'Tag suffix for the variant_dockerfile images (e.g. 1.2.3-gpu, latest-gpu)'
+        type: string
+        required: false
+        default: '-gpu'
       platforms:
         description: Comma-separated build platforms
         type: string
@@ -82,6 +96,7 @@ jobs:
       id-token: write
     outputs:
       digest: ${{ steps.push.outputs.digest }}
+      variant_digest: ${{ steps.push_variant.outputs.digest }}
       release_version: ${{ steps.version.outputs.release_version }}
     steps:
       - uses: actions/create-github-app-token@v3
@@ -261,8 +276,41 @@ jobs:
             BUILD_DATE=${{ steps.version.outputs.build_date }}
           provenance: true
           sbom: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=release-main
+          cache-to: type=gha,mode=max,scope=release-main
+
+      - name: Docker metadata (variant)
+        id: meta_variant
+        if: inputs.variant_dockerfile != ''
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ join(fromJson(inputs.images), ',') }}
+          flavor: |
+            latest=false
+            suffix=${{ inputs.variant_suffix }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.release_version }}
+            type=raw,value=${{ steps.version.outputs.release_version_minor }}
+            type=raw,value=latest
+
+      - name: Build and push (variant)
+        id: push_variant
+        if: inputs.variant_dockerfile != ''
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.context }}/${{ inputs.variant_dockerfile }}
+          platforms: ${{ inputs.platforms }}
+          push: true
+          tags: ${{ steps.meta_variant.outputs.tags }}
+          labels: ${{ steps.meta_variant.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.release_version }}
+            BUILD_DATE=${{ steps.version.outputs.build_date }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha,scope=release-variant
+          cache-to: type=gha,mode=max,scope=release-variant
 
       - name: Push commits
         run: git push origin ${{ inputs.default_branch }}
@@ -308,4 +356,12 @@ jobs:
         with:
           subject-name: ${{ matrix.image }}
           subject-digest: ${{ needs.release.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest image (variant)
+        if: needs.release.outputs.variant_digest != ''
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ matrix.image }}
+          subject-digest: ${{ needs.release.outputs.variant_digest }}
           push-to-registry: true
