@@ -282,7 +282,7 @@ jobs:
       - name: Docker metadata (variant)
         id: meta_variant
         if: inputs.variant_dockerfile != ''
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ join(fromJson(inputs.images), ',') }}
           flavor: |
