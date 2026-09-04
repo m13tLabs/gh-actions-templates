@@ -111,6 +111,16 @@ gitignored, don't check it in.
   "Install dependencies" step is safe today only because a non-conditional `pip install
   ansible-lint` line follows it — don't reorder that step without keeping something
   unconditional last.
+- `actions/create-github-app-token@v3` tokens are hard-capped at 1 hour by GitHub. In
+  `docker-release.yml`, minting the token once at job start (for `Checkout`) and reusing it for
+  the final `git push`/`gh release create` steps works fine on `ansible-role-release.yml`
+  (fast, no Docker build) but broke on `docker-release.yml`: multi-arch (`linux/amd64,linux/arm64`)
+  QEMU-emulated builds can take long enough that the token expires before the push step runs,
+  producing `fatal: could not read Username for 'https://github.com': No such device or
+  address'` (git falling back to an interactive prompt after the stale credential is rejected).
+  Fixed by minting a second, fresh App token (`app-token-push`) right before `Push commits` and
+  using it explicitly for that push and for `Create Release on GH`, instead of relying on the
+  credential `actions/checkout` persisted at job start.
 - The molecule job's "Publish test report" step (`mikepenz/action-junit-report@v6`) logs
   `Failed to create checks using the provided token — Resource not accessible by integration`
   when the calling workflow's `GITHUB_TOKEN` lacks `checks: write` (true for `self-test.yml`,
