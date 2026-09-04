@@ -368,7 +368,7 @@ jobs:
 
       - name: Attest image (variant)
         if: needs.release.outputs.variant_digest != ''
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ matrix.image }}
           subject-digest: ${{ needs.release.outputs.variant_digest }}
