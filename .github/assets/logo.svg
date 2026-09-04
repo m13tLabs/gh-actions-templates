@@ -1,0 +1,30 @@
+<svg width="1024" height="260" viewBox="0 0 1024 260" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="gh-actions-templates">
+  <defs>
+    <linearGradient id="badge" x1="20" y1="10" x2="260" y2="250" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1f6feb"/>
+      <stop offset="1" stop-color="#8957e5"/>
+    </linearGradient>
+  </defs>
+
+  <!-- icon badge -->
+  <g transform="translate(20,10)">
+    <rect x="0" y="0" width="240" height="240" rx="52" fill="url(#badge)"/>
+
+    <!-- reuse / sync ring: two arrows chasing each other -->
+    <g stroke="#ffffff" stroke-width="16" stroke-linecap="round" fill="none">
+      <path d="M40 120 A80 80 0 0 1 200 120"/>
+      <path d="M200 120 A80 80 0 0 1 40 120"/>
+    </g>
+    <path d="M200 96 L214 130 L186 130 Z" fill="#ffffff"/>
+    <path d="M40 144 L26 110 L54 110 Z" fill="#ffffff"/>
+
+    <!-- actions "play" mark -->
+    <path d="M104 92 Q104 84 111 88 L150 114 Q157 120 150 126 L111 152 Q104 156 104 148 Z" fill="#ffffff"/>
+  </g>
+
+  <!-- wordmark -->
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="300" y="122" font-size="54" dominant-baseline="middle"><tspan fill="#1f6feb" font-weight="700">gh</tspan><tspan fill="#8957e5" font-weight="700">-actions</tspan><tspan fill="#7d8590">-templates</tspan></text>
+    <text x="302" y="176" font-size="23" fill="#7d8590" letter-spacing="1">reusable workflow_call templates</text>
+  </g>
+</svg>

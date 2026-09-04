@@ -1,3 +1,7 @@
+<p align="center">
+  <img src=".github/assets/logo.svg" alt="gh-actions-templates" width="560">
+</p>
+
 # gh-actions-templates
 
 Reusable GitHub Actions workflows shared across m13tLabs repos, called via `uses:`.
@@ -114,9 +118,10 @@ exact name in the calling repo or its org.
 
 ## docker-ci.yml
 
-CI for a Docker image repo: `actionlint`, `hadolint`, and a single-arch `docker buildx`
-build that is loaded and smoke-tested. The smoke test is a shell one-liner supplied by the
-caller with `$IMAGE` set to the built local tag; set `smoke_test: ""` to skip it.
+CI for a Docker image repo: `actionlint`, plus `hadolint` and a single-arch `docker buildx`
+build (loaded and smoke-tested) per Dockerfile in `dockerfiles`. The smoke test is a shell
+one-liner supplied by the caller with `$IMAGE` set to that build's local tag, run once per
+Dockerfile; set `smoke_test: ""` to skip it.
 
 ```yaml
 # .github/workflows/ci.yml
@@ -137,6 +142,7 @@ jobs:
       checks: write
     with:
       image_name: openjarvis
+      dockerfiles: '["Dockerfile","Dockerfile.gpu"]'
       smoke_test: docker run --rm "$IMAGE" --version
 ```
 
@@ -144,11 +150,11 @@ jobs:
 
 | Input | Default | Description |
 | --- | --- | --- |
-| `image_name` | `"ci-image"` | Local tag the CI build is loaded as |
+| `image_name` | `"ci-image"` | Local tag prefix the CI builds are loaded as |
 | `context` | `"."` | Docker build context |
-| `dockerfile` | `"Dockerfile"` | Dockerfile path, relative to `context` |
-| `build_args` | `""` | Newline-separated build args |
-| `smoke_test` | `docker run --rm "$IMAGE" --help` | Shell run with `$IMAGE` set; `""` skips it |
+| `dockerfiles` | `'["Dockerfile"]'` | JSON array of Dockerfile paths (relative to `context`); each is linted + built + smoke-tested |
+| `build_args` | `""` | Newline-separated build args applied to every build |
+| `smoke_test` | `docker run --rm "$IMAGE" --help` | Shell run with `$IMAGE` set, once per Dockerfile; `""` skips it |
 | `runs_on` | `"ubuntu-latest"` | Runner for every job |
 
 ## docker-release.yml
@@ -157,7 +163,9 @@ Manual release for a Docker image repo: bumps the version file, updates `CHANGEL
 `git-cliff`, builds a multi-arch image, pushes every image ref tagged `X.Y.Z` / `X.Y` /
 `latest`, attests build provenance per image, and creates a GitHub Release — authenticated
 as a GitHub App so the release commit can push to a protected default branch. Passes
-`APP_VERSION` and `BUILD_DATE` as build args.
+`APP_VERSION` and `BUILD_DATE` as build args. Set `variant_dockerfile` to also build and
+push a second image (e.g. a GPU build) with the same tag set plus `variant_suffix`
+(`X.Y.Z-gpu`, `latest-gpu`, …) and its own attestation.
 
 ```yaml
 # .github/workflows/release.yml
@@ -189,6 +197,7 @@ jobs:
       release_type: ${{ inputs.release_type }}
       custom_version: ${{ inputs.custom_version }}
       dockerhub: true
+      variant_dockerfile: Dockerfile.gpu
     secrets: inherit
 ```
 
@@ -203,8 +212,10 @@ jobs:
 | `default_branch` | `"develop"` | Branch released from and pushed back to |
 | `version_file` | `"config.json"` | JSON file with a top-level `version` key |
 | `context` | `"."` | Docker build context |
-| `dockerfile` | `"Dockerfile"` | Dockerfile path, relative to `context` |
-| `platforms` | `"linux/amd64,linux/arm64"` | Comma-separated build platforms |
+| `dockerfile` | `"Dockerfile"` | Main Dockerfile path, relative to `context` |
+| `variant_dockerfile` | `""` | Optional second Dockerfile built + pushed alongside the main one; `""` disables it |
+| `variant_suffix` | `"-gpu"` | Tag suffix for the `variant_dockerfile` images |
+| `platforms` | `"linux/amd64,linux/arm64"` | Comma-separated build platforms (applies to both builds) |
 | `dockerhub` | `false` | Log in to Docker Hub before pushing |
 | `draft_release` | `true` | Create the GitHub Release as a draft |
 
