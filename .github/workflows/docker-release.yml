@@ -85,7 +85,7 @@ on:
         default: true
     secrets:
       CI_PRIVATE_KEY:
-        description: 'Private key for the GitHub App identified by app_id'
+        description: 'Private key for the GitHub App identified by client_id'
         required: true
       DOCKER_HUB_USER:
         description: 'Docker Hub username (only when dockerhub: true)'
@@ -118,7 +118,7 @@ jobs:
         id: get-user-id
         run: echo "user-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
         env:
-          GH_TOKEN: ${{ steps.app-towken.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Checkout
         uses: actions/checkout@v7
