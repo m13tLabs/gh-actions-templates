@@ -22,6 +22,11 @@ on:
         description: Newline-separated build args forwarded to every build
         type: string
         default: ''
+      dockerhub:
+        description: 'Log in to Docker Hub before pushing (needs DOCKER_HUB_USER / DOCKER_HUB_TOKEN)'
+        type: boolean
+        required: false
+        default: false
       smoke_test:
         description: >-
           Shell run by the "Smoke test" step with $IMAGE set to the built local
