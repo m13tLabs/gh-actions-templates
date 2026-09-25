@@ -48,8 +48,16 @@ repo's root (an Ansible role fixture) isn't. Validate them against a real consum
 - `docker-release.yml` takes `images` as a JSON array and fans the provenance attestation
   out over it via a matrix. `variant_dockerfile` (+ `variant_suffix`, default `-gpu`) adds a
   second build/push of another Dockerfile with the same tag set plus the suffix; its steps
-  are gated on `inputs.variant_dockerfile != ''` and it gets a second attestation step
+  are gated on `inputs.variant_dockerfile != ''` and it gets its own `attest-variant` job
   keyed off the `variant_digest` job output (empty string when the step is skipped).
+  `variant_context` / `variant_images` (both default to the main build's) let the variant
+  be a differently named image from another directory — `ai-agent-for-gitlab` uses this
+  to release `gitlab-app/` + `agent-image/` under one version.
+- `docker-release.yml`'s `bump_command` runs via `env` + `bash -euo pipefail -c` (never
+  `${{ inputs.* }}` spliced into the script) and is followed by `git add -u`, so it can only
+  add *tracked* files to the release commit — a new file it creates is silently left out.
+- `docker-ci.yml` keys its GHA cache scope on `context/dockerfile` when `context != '.'`,
+  so a repo calling it once per image directory doesn't thrash a shared `Dockerfile` scope.
 
 ## Validating changes
 

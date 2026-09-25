@@ -35,6 +35,16 @@ on:
         type: string
         required: false
         default: 'config.json'
+      bump_command:
+        description: >-
+          Optional shell run right after version_file is bumped, with
+          $RELEASE_VERSION set, to pin the new version elsewhere (e.g. image
+          tags in a Helm chart's values.yaml). Every tracked file it modifies
+          is added to the release commit. It must fail (non-zero exit) when a
+          file it expects to update didn't match.
+        type: string
+        required: false
+        default: ''
       context:
         description: Docker build context
         type: string
@@ -59,6 +69,21 @@ on:
         type: string
         required: false
         default: '-gpu'
+      variant_context:
+        description: >-
+          Docker build context for variant_dockerfile. Defaults to `context`;
+          set it when the second image lives in its own directory.
+        type: string
+        required: false
+        default: ''
+      variant_images:
+        description: >-
+          JSON array of image names for variant_dockerfile. Defaults to
+          `images`; set it (usually with `variant_suffix: ''`) to release a
+          second, differently named image from the same repo and version.
+        type: string
+        required: false
+        default: ''
       platforms:
         description: Comma-separated build platforms
         type: string
@@ -83,6 +108,16 @@ on:
         type: boolean
         required: false
         default: true
+    outputs:
+      release_version:
+        description: 'The version this run released (X.Y.Z)'
+        value: ${{ jobs.release.outputs.release_version }}
+      release_sha:
+        description: >-
+          SHA of the pushed release commit (version bump + changelog). Check this
+          out in follow-up jobs rather than the v<version> tag, which a draft
+          release doesn't create until it's published.
+        value: ${{ jobs.release.outputs.release_sha }}
     secrets:
       CI_PRIVATE_KEY:
         description: 'Private key for the GitHub App identified by client_id'
@@ -107,6 +142,7 @@ jobs:
       digest: ${{ steps.push.outputs.digest }}
       variant_digest: ${{ steps.push_variant.outputs.digest }}
       release_version: ${{ steps.version.outputs.release_version }}
+      release_sha: ${{ steps.push_commits.outputs.sha }}
     steps:
       - uses: actions/create-github-app-token@v3
         id: app-token
@@ -174,10 +210,19 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Bump version
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
+          BUMP_COMMAND: ${{ inputs.bump_command }}
         run: |
           jq '.version = "${{ steps.version.outputs.release_version }}"' "${{ inputs.version_file }}" > "${{ inputs.version_file }}.new"
           mv "${{ inputs.version_file }}.new" "${{ inputs.version_file }}"
           git add "${{ inputs.version_file }}"
+
+          if [ -n "$BUMP_COMMAND" ]; then
+            bash -euo pipefail -c "$BUMP_COMMAND"
+            git add -u
+          fi
+
           git commit -m "Release ${{ steps.version.outputs.release_version }}"
 
       - name: Update changelog
@@ -293,7 +338,7 @@ jobs:
         if: inputs.variant_dockerfile != ''
         uses: docker/metadata-action@v6
         with:
-          images: ${{ join(fromJson(inputs.images), ',') }}
+          images: ${{ join(fromJson(inputs.variant_images != '' && inputs.variant_images || inputs.images), ',') }}
           flavor: |
             latest=false
             suffix=${{ inputs.variant_suffix }}
@@ -307,8 +352,8 @@ jobs:
         if: inputs.variant_dockerfile != ''
         uses: docker/build-push-action@v7
         with:
-          context: ${{ inputs.context }}
-          file: ${{ inputs.context }}/${{ inputs.variant_dockerfile }}
+          context: ${{ inputs.variant_context != '' && inputs.variant_context || inputs.context }}
+          file: ${{ inputs.variant_context != '' && inputs.variant_context || inputs.context }}/${{ inputs.variant_dockerfile }}
           platforms: ${{ inputs.variant_platforms != '' && inputs.variant_platforms || inputs.platforms }}
           push: true
           tags: ${{ steps.meta_variant.outputs.tags }}
@@ -329,8 +374,10 @@ jobs:
           private-key: ${{ secrets.CI_PRIVATE_KEY }}
 
       - name: Push commits
+        id: push_commits
         run: |
           git push "https://x-access-token:${{ steps.app-token-push.outputs.token }}@github.com/${{ github.repository }}.git" HEAD:${{ inputs.default_branch }}
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Create Release on GH
         env:
@@ -375,8 +422,35 @@ jobs:
           subject-digest: ${{ needs.release.outputs.digest }}
           push-to-registry: true
 
-      - name: Attest image (variant)
-        if: needs.release.outputs.variant_digest != ''
+  attest-variant:
+    name: Attest ${{ matrix.image }} (variant)
+    runs-on: ubuntu-latest
+    needs: release
+    if: needs.release.outputs.variant_digest != ''
+    permissions:
+      packages: write
+      attestations: write
+      id-token: write
+    strategy:
+      matrix:
+        image: ${{ fromJson(inputs.variant_images != '' && inputs.variant_images || inputs.images) }}
+    steps:
+      - name: Log in to GHCR
+        if: startsWith(matrix.image, 'ghcr.io/')
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: inputs.dockerhub && startsWith(matrix.image, 'docker.io/')
+        uses: docker/login-action@v4
+        with:
+          username: ${{ vars.DOCKER_HUB_USER }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Attest image
         uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ matrix.image }}

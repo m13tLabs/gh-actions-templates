@@ -165,7 +165,10 @@ Manual release for a Docker image repo: bumps the version file, updates `CHANGEL
 as a GitHub App so the release commit can push to a protected default branch. Passes
 `APP_VERSION` and `BUILD_DATE` as build args. Set `variant_dockerfile` to also build and
 push a second image (e.g. a GPU build) with the same tag set plus `variant_suffix`
-(`X.Y.Z-gpu`, `latest-gpu`, …) and its own attestation.
+(`X.Y.Z-gpu`, `latest-gpu`, …) and its own attestation. For a repo shipping two
+differently named images from separate directories (e.g. an app + a CI runner image), point
+`variant_context` / `variant_images` at the second one and set `variant_suffix: ''` — both
+images then share one version, changelog and GitHub Release.
 
 ```yaml
 # .github/workflows/release.yml
@@ -211,13 +214,24 @@ jobs:
 | `custom_version` | `""` | Explicit version, required when `release_type: custom` |
 | `default_branch` | `"develop"` | Branch released from and pushed back to |
 | `version_file` | `"config.json"` | JSON file with a top-level `version` key |
+| `bump_command` | `""` | Shell run after the version bump with `$RELEASE_VERSION` set; tracked files it changes join the release commit (e.g. pin chart image tags) |
 | `context` | `"."` | Docker build context |
 | `dockerfile` | `"Dockerfile"` | Main Dockerfile path, relative to `context` |
 | `variant_dockerfile` | `""` | Optional second Dockerfile built + pushed alongside the main one; `""` disables it |
 | `variant_suffix` | `"-gpu"` | Tag suffix for the `variant_dockerfile` images |
+| `variant_context` | `""` | Build context for `variant_dockerfile`; `""` means `context` |
+| `variant_images` | `""` | JSON array of image refs for the variant build; `""` means `images` |
+| `variant_platforms` | `""` | Build platforms for the variant build; `""` means `platforms` |
 | `platforms` | `"linux/amd64,linux/arm64"` | Comma-separated build platforms (applies to both builds) |
 | `dockerhub` | `false` | Log in to Docker Hub before pushing |
 | `draft_release` | `true` | Create the GitHub Release as a draft |
+
+### Outputs
+
+| Output | Description |
+| --- | --- |
+| `release_version` | The released version (`X.Y.Z`) |
+| `release_sha` | SHA of the pushed release commit; check this out in follow-up jobs (e.g. publishing a Helm chart), since a draft release has no `v<version>` tag yet |
 
 ### Secrets
 

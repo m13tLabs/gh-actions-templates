@@ -107,7 +107,12 @@ jobs:
       - name: Local tag for this Dockerfile
         id: prep
         run: |
-          slug="$(printf '%s' '${{ matrix.dockerfile }}' | tr -c 'A-Za-z0-9_.-' '-')"
+          # Key the cache scope on context too, so a repo calling this workflow
+          # once per image directory doesn't share one scope for every
+          # `Dockerfile`. The default context keeps the old, bare scope name.
+          ref='${{ matrix.dockerfile }}'
+          if [ '${{ inputs.context }}' != '.' ]; then ref='${{ inputs.context }}/'"$ref"; fi
+          slug="$(printf '%s' "$ref" | tr -c 'A-Za-z0-9_.-' '-')"
           echo "slug=${slug}" >> "$GITHUB_OUTPUT"
           echo "tag=${{ inputs.image_name }}:ci-${slug}" >> "$GITHUB_OUTPUT"
 
