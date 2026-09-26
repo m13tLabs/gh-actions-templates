@@ -135,3 +135,10 @@ gitignored, don't check it in.
   which doesn't declare a `permissions:` block). This is non-fatal — `fail_on_failure` and
   `fail_on_parse_error` both default to `false` — but real consumer repos wanting the check
   annotation to actually post will need `permissions: checks: write` on their caller job.
+- Release notes (`RELEASE_NOTES.md`) in the `*-release.yml` templates must be generated with
+  `git-cliff --tag v<new> --unreleased`, **not** `--latest`. `--latest` renders the newest
+  *existing* tag's section, ignoring `--tag`, so `ai-agent-for-gitlab`'s 0.2.2 GitHub Release
+  shipped 0.2.0's notes (CHANGELOG.md itself was fine, since it already used `--unreleased`).
+- `draft_release: true` creates no git tag until the draft is published. A draft that is
+  deleted instead (e.g. 0.2.1 in `ai-agent-for-gitlab`) leaves no tag behind, so the next
+  release's changelog range starts at the previous tag and includes those commits again.
