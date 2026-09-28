@@ -155,6 +155,8 @@ jobs:
 | `dockerfiles` | `'["Dockerfile"]'` | JSON array of Dockerfile paths (relative to `context`); each is linted + built + smoke-tested |
 | `build_args` | `""` | Newline-separated build args applied to every build |
 | `smoke_test` | `docker run --rm "$IMAGE" --help` | Shell run with `$IMAGE` set, once per Dockerfile; `""` skips it |
+| `platforms` | `"linux/amd64,linux/arm64"` | Extra build (not loaded/smoke-tested) for these platforms under buildkit's QEMU, like `docker-release.yml`; `""` skips it |
+| `dockerfile_platforms` | `'{}'` | JSON object overriding `platforms` per Dockerfile, e.g. `'{"Dockerfile.gpu":"linux/amd64"}'` |
 | `runs_on` | `"ubuntu-latest"` | Runner for every job |
 
 ## docker-release.yml

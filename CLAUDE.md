@@ -56,6 +56,13 @@ repo's root (an Ansible role fixture) isn't. Validate them against a real consum
 - `docker-release.yml`'s `bump_command` runs via `env` + `bash -euo pipefail -c` (never
   `${{ inputs.* }}` spliced into the script) and is followed by `git add -u`, so it can only
   add *tracked* files to the release commit — a new file it creates is silently left out.
+- `docker-ci.yml` also builds every Dockerfile for `platforms` (default
+  `linux/amd64,linux/arm64`, same as `docker-release.yml`; per-Dockerfile override via
+  `dockerfile_platforms`), without `setup-qemu-action`, so arm64 runs under buildkit's
+  built-in QEMU exactly as in the release. That emulator doesn't preserve argv[0], which
+  breaks uutils (Ubuntu 26.04+) `env` in `#!/usr/bin/env node` shebangs on arm64 only —
+  `ai-agent-for-gitlab`'s agent image hit this mid-release. Keep both templates' QEMU setup
+  in sync, or CI stops reproducing the release.
 - `docker-ci.yml` keys its GHA cache scope on `context/dockerfile` when `context != '.'`,
   so a repo calling it once per image directory doesn't thrash a shared `Dockerfile` scope.
 
