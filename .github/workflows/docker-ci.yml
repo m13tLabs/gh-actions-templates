@@ -34,6 +34,21 @@ on:
           Set to an empty string to skip the smoke test entirely.
         type: string
         default: docker run --rm "$IMAGE" --help
+      platforms:
+        description: >-
+          Comma-separated platforms every Dockerfile is additionally built for
+          (not loaded or smoke-tested), matching docker-release.yml's default so
+          emulated (QEMU) arm64 failures surface in CI instead of mid-release.
+          Set to an empty string to skip.
+        type: string
+        default: 'linux/amd64,linux/arm64'
+      dockerfile_platforms:
+        description: >-
+          JSON object overriding `platforms` per Dockerfile, e.g.
+          '{"Dockerfile.gpu":"linux/amd64"}' for a base image published amd64-only
+          (mirror docker-release.yml's variant_platforms).
+        type: string
+        default: '{}'
       runs_on:
         description: Runner for every job
         type: string
@@ -113,8 +128,11 @@ jobs:
           ref='${{ matrix.dockerfile }}'
           if [ '${{ inputs.context }}' != '.' ]; then ref='${{ inputs.context }}/'"$ref"; fi
           slug="$(printf '%s' "$ref" | tr -c 'A-Za-z0-9_.-' '-')"
-          echo "slug=${slug}" >> "$GITHUB_OUTPUT"
-          echo "tag=${{ inputs.image_name }}:ci-${slug}" >> "$GITHUB_OUTPUT"
+          {
+            echo "slug=${slug}"
+            echo "tag=${{ inputs.image_name }}:ci-${slug}"
+            echo "platforms=${{ fromJson(inputs.dockerfile_platforms)[matrix.dockerfile] || inputs.platforms }}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build image
         uses: docker/build-push-action@v7
@@ -132,6 +150,21 @@ jobs:
         env:
           IMAGE: ${{ steps.prep.outputs.tag }}
         run: ${{ inputs.smoke_test }}
+
+      # Same platforms and emulation as docker-release.yml, which also relies on
+      # buildkit's built-in QEMU (no setup-qemu-action) - keep the two in sync so
+      # an arm64-only failure (e.g. uutils `env` rejecting QEMU's argv[0] on
+      # Ubuntu 26.04 bases) fails here rather than in the release run.
+      - name: Build release platforms
+        if: steps.prep.outputs.platforms != ''
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.context }}/${{ matrix.dockerfile }}
+          platforms: ${{ steps.prep.outputs.platforms }}
+          build-args: ${{ inputs.build_args }}
+          cache-from: type=gha,scope=${{ steps.prep.outputs.slug }}
+          cache-to: type=gha,mode=max,scope=${{ steps.prep.outputs.slug }}
 
   build-results:
     name: Build results
