@@ -10,6 +10,7 @@ is each workflow's `on.workflow_call.inputs`. Keep the tables below in sync with
 - [ansible-role-galaxy.yml](#ansible-role-galaxyyml)
 - [docker-ci.yml](#docker-ciyml)
 - [docker-release.yml](#docker-releaseyml)
+- [maven-release.yml](#maven-releaseyml)
 - [Repo design](#repo-design)
 - [Known gotchas](#known-gotchas)
 
@@ -165,6 +166,71 @@ How it's built:
   spliced into the script. It's followed by `git add -u`, so only *tracked* files join the
   release commit. A new file it creates is silently left out.
 
+## maven-release.yml
+
+Manual release of a (multi-module) Maven project to Maven Central: sets the release version
+with `versions:set`, updates `CHANGELOG.md` via `git-cliff`, runs `mvn clean deploy
+<maven_args>`, sets the next `X.Y.(Z+1)-SNAPSHOT`, pushes both commits and creates a GitHub
+Release targeting the release commit. Uses `./mvnw` when present, else `mvn`.
+
+The version base is the pom's `X.Y.Z-SNAPSHOT`: `patch` releases `X.Y.Z` as is, `minor`
+releases `X.(Y+1).0`, `major` `(X+1).0.0`. The run fails early if tag `v<version>` exists.
+
+Signing and Central publishing stay in the caller's pom (typically a profile with
+`maven-source-plugin`, `maven-javadoc-plugin`, `maven-gpg-plugin` and
+`central-publishing-maven-plugin`), activated through `maven_args`.
+
+```yaml
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        type: choice
+        default: patch
+        options: [patch, minor, major, custom]
+      custom_version:
+        type: string
+
+jobs:
+  release:
+    uses: m13tLabs/gh-actions-templates/.github/workflows/maven-release.yml@main
+    with:
+      release_type: ${{ inputs.release_type }}
+      custom_version: ${{ inputs.custom_version }}
+      client_id: ${{ vars.CI_CLIENT_ID }}
+      maven_args: '-Pcentral-publish -DskipTests'
+    secrets: inherit
+```
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `client_id` | (required) | GitHub App client ID, e.g. `${{ vars.CI_CLIENT_ID }}` |
+| `release_type` | `"patch"` | `patch`, `minor`, `major` or `custom` (see above for the base) |
+| `custom_version` | `""` | Explicit version, required when `release_type: custom` |
+| `default_branch` | `"develop"` | Branch released from and pushed back to |
+| `java_version` | `"25"` | JDK passed to `actions/setup-java` |
+| `java_distribution` | `"temurin"` | JDK distribution passed to `actions/setup-java` |
+| `maven_args` | `"-Pcentral-publish"` | Extra arguments for `mvn clean deploy` |
+| `server_id` | `"central"` | `settings.xml` server id for the Central credentials (`publishingServerId`) |
+| `draft_release` | `true` | Create the GitHub Release as a draft |
+
+| Output | Description |
+| --- | --- |
+| `release_version` | The released version (`X.Y.Z`) |
+| `release_sha` | SHA of the release commit that was deployed. The branch head is the next `-SNAPSHOT` commit |
+
+Secrets: `CI_PRIVATE_KEY`, `OSS_SONATYPE_USER` / `OSS_SONATYPE_PASS` (Central Portal user
+token), `OSS_SONATYPE_GPG_PRIVATE_KEY` / `OSS_SONATYPE_GPG_PASSPHRASE`.
+
+How it's built:
+
+- No `maven-release-plugin`. It pushed the tag in `release:prepare` before `release:perform`
+  deployed, so a failed Central upload (zap-java 1.0.14) left a tag with no artifacts. Here
+  nothing is pushed until `deploy` has succeeded.
+- `actions/setup-java` writes `settings.xml` with `${env.MAVEN_USERNAME}` /
+  `${env.MAVEN_PASSWORD}` and imports the GPG key. `maven-gpg-plugin` (3.2+) reads
+  `MAVEN_GPG_PASSPHRASE` from the environment.
+
 ## Repo design
 
 `pipeline.yml` runs actionlint and calls `ansible-role-ci.yml` against a minimal, throwaway
@@ -222,6 +288,11 @@ Releases:
 - Generate `RELEASE_NOTES.md` with `git-cliff --tag v<new> --unreleased`, **not**
   `--latest`. `--latest` renders the newest *existing* tag's section and ignores `--tag`, so
   `ai-agent-for-gitlab`'s 0.2.2 Release shipped 0.2.0's notes.
+- Maven 3.10.0 + `central-publishing-maven-plugin` 0.11.0: the bundle also contains
+  `_remote.repositories` and artifactId-level `maven-metadata-local.xml`, and Central rejects
+  it with `Bundle has content that does NOT have a .pom file: <group>/<artifactId>, …`.
+  3.9.16 bundles cleanly. Keep consumers' Maven wrapper below 3.10 (Renovate
+  `allowedVersions: "<3.10"`) until the plugin filters these files.
 - `draft_release: true` creates no git tag until the draft is published. If a draft is
   deleted instead (0.2.1 in `ai-agent-for-gitlab`), no tag is left behind, and the next
   release's changelog includes those commits again.

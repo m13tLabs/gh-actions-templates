@@ -50,7 +50,8 @@ first.
 
 ### Templates without a self-test
 
-`ansible-role-release.yml`, `ansible-role-galaxy.yml`, `docker-release.yml` push commits/tags
+`ansible-role-release.yml`, `ansible-role-galaxy.yml`, `docker-release.yml`, `maven-release.yml`
+push commits/tags
 and create real releases, and `docker-ci.yml` needs a real `Dockerfile` at the caller's root.
 Validate changes to them by pinning a real consumer repo's caller workflow (e.g.
 `openjarvis`) to your branch or PR SHA before merging.

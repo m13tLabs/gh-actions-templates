@@ -1,0 +1,306 @@
+name: Maven Release
+
+on:
+  workflow_call:
+    inputs:
+      client_id:
+        description: 'GitHub Client ID whose private key is passed as the CI_PRIVATE_KEY secret'
+        type: string
+        required: true
+      release_type:
+        description: >-
+          Type of release to build: patch, minor, major, or custom. The base is
+          the pom's X.Y.Z-SNAPSHOT version: patch releases X.Y.Z as is, minor
+          releases X.(Y+1).0 and major (X+1).0.0.
+        type: string
+        required: false
+        default: 'patch'
+      custom_version:
+        description: "Version to release (only used when release_type is 'custom', e.g. 1.2.3)"
+        type: string
+        required: false
+        default: ''
+      default_branch:
+        description: 'Branch to release from and push commits/tags back to'
+        type: string
+        required: false
+        default: 'develop'
+      java_version:
+        description: 'JDK version passed to actions/setup-java'
+        type: string
+        required: false
+        default: '25'
+      java_distribution:
+        description: 'JDK distribution passed to actions/setup-java'
+        type: string
+        required: false
+        default: 'temurin'
+      maven_args:
+        description: >-
+          Extra arguments for the `mvn deploy` run, e.g. the profile that
+          attaches sources/javadoc, signs and adds central-publishing-maven-plugin
+          ('-Pcentral-publish -DskipTests').
+        type: string
+        required: false
+        default: '-Pcentral-publish'
+      server_id:
+        description: 'settings.xml server id the Central credentials are written under (publishingServerId of central-publishing-maven-plugin)'
+        type: string
+        required: false
+        default: 'central'
+      draft_release:
+        description: 'Create the GitHub release as a draft'
+        type: boolean
+        required: false
+        default: true
+    outputs:
+      release_version:
+        description: 'The version this run released (X.Y.Z)'
+        value: ${{ jobs.release.outputs.release_version }}
+      release_sha:
+        description: >-
+          SHA of the release commit (version bump + changelog), i.e. what was
+          deployed. The branch head is the following -SNAPSHOT commit.
+        value: ${{ jobs.release.outputs.release_sha }}
+    secrets:
+      CI_PRIVATE_KEY:
+        description: 'Private key for the GitHub App identified by client_id'
+        required: true
+      OSS_SONATYPE_USER:
+        description: 'Central Portal user token name'
+        required: true
+      OSS_SONATYPE_PASS:
+        description: 'Central Portal user token password'
+        required: true
+      OSS_SONATYPE_GPG_PRIVATE_KEY:
+        description: 'ASCII-armored GPG private key used to sign the artifacts'
+        required: true
+      OSS_SONATYPE_GPG_PASSPHRASE:
+        description: 'Passphrase of OSS_SONATYPE_GPG_PRIVATE_KEY'
+        required: true
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release_version: ${{ steps.version.outputs.release_version }}
+      release_sha: ${{ steps.release_commit.outputs.sha }}
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ inputs.client_id }}
+          private-key: ${{ secrets.CI_PRIVATE_KEY }}
+
+      - name: Get GitHub App User ID
+        id: get-user-id
+        run: echo "user-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+          ref: ${{ inputs.default_branch }}
+
+      - name: Configure Git author
+        run: |
+          git config --global user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
+          git config --global user.email '${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com'
+
+      # Writes settings.xml with the Central server (credentials read from the env vars
+      # named here) and imports the GPG key; maven-gpg-plugin picks up MAVEN_GPG_PASSPHRASE.
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: ${{ inputs.java_distribution }}
+          java-version: ${{ inputs.java_version }}
+          cache: 'maven'
+          server-id: ${{ inputs.server_id }}
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: ${{ secrets.OSS_SONATYPE_GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - name: Select Maven
+        run: |
+          if [ -x ./mvnw ]; then
+            echo "MVN=./mvnw" >> "$GITHUB_ENV"
+          else
+            echo "MVN=mvn" >> "$GITHUB_ENV"
+          fi
+
+      - name: Determine release version
+        id: version
+        env:
+          RELEASE_TYPE: ${{ inputs.release_type }}
+          CUSTOM_VERSION: ${{ inputs.custom_version }}
+        run: |
+          currentVersion=$($MVN -B -ntp -q help:evaluate -Dexpression=project.version -DforceStdout)
+          baseVersion="${currentVersion%-SNAPSHOT}"
+
+          case "$RELEASE_TYPE" in
+            custom)
+              releaseVersion="$CUSTOM_VERSION"
+              if [ -z "$releaseVersion" ]; then
+                echo "custom_version is required when release_type is 'custom'" >&2
+                exit 1
+              fi
+              ;;
+            major|minor|patch)
+              IFS='.' read -r major minor patch <<< "$baseVersion"
+              case "$RELEASE_TYPE" in
+                major) major=$((major + 1)); minor=0; patch=0 ;;
+                minor) minor=$((minor + 1)); patch=0 ;;
+                patch) ;;
+              esac
+              releaseVersion="${major}.${minor}.${patch}"
+              ;;
+            *)
+              echo "Unknown release_type '$RELEASE_TYPE'" >&2
+              exit 1
+              ;;
+          esac
+
+          if git rev-parse -q --verify "refs/tags/v$releaseVersion" >/dev/null; then
+            echo "Tag v$releaseVersion already exists" >&2
+            exit 1
+          fi
+
+          IFS='.' read -r relMajor relMinor relPatch <<< "$releaseVersion"
+          nextVersion="${relMajor}.${relMinor}.$((relPatch + 1))-SNAPSHOT"
+
+          echo "Releasing version $releaseVersion (current: $currentVersion, next: $nextVersion)"
+          {
+            echo "release_version=$releaseVersion"
+            echo "next_version=$nextVersion"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Bump version
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
+        run: |
+          $MVN -B -ntp -q versions:set -DnewVersion="$RELEASE_VERSION" -DgenerateBackupPoms=false -DprocessAllModules=true
+          git add -u
+          git commit -m "Release $RELEASE_VERSION"
+
+      - name: Update changelog
+        id: release_commit
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
+        run: |
+          pip install git-cliff
+
+          if [ ! -f cliff.toml ]; then
+            cat > cliff.toml <<'EOF'
+          [changelog]
+          header = ""
+          body = """
+          {% if version %}\
+          ## [{{ version | trim_start_matches(pat="v") }}](https://github.com/${{ github.repository }}/compare/{{ previous.version }}...{{ version }}) ({{ timestamp | date(format="%Y-%m-%d") }})
+          {% else %}\
+          ## [Unreleased]
+          {% endif %}\
+
+          {% for group, commits in commits | group_by(attribute="group") %}
+          ### {{ group }}
+
+          {% for commit in commits %}\
+          * {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }} \
+          ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/${{ github.repository }}/commit/{{ commit.id }}))\
+          {% if commit.breaking %} **BREAKING CHANGE**{% endif %}
+
+          {% endfor %}
+          {% endfor %}\n
+          """
+          trim = true
+          footer = ""
+
+          [git]
+          conventional_commits = true
+          filter_unconventional = true
+          split_commits = false
+          tag_pattern = "v[0-9].*"
+          sort_commits = "oldest"
+
+          commit_parsers = [
+              { message = "^feat", group = "Features" },
+              { message = "^fix", group = "Bug Fixes" },
+              { message = "^perf", group = "Performance" },
+              { message = "^refactor", group = "Refactoring" },
+              { message = "^doc|^docs", group = "Documentation" },
+              { message = "^test", group = "Testing" },
+              { message = "^chore\\(deps\\)", group = "Dependency Updates" },
+              { message = "^chore", skip = true },
+              { message = "^ci", skip = true },
+              { message = "^style", skip = true },
+              { body = ".*security", group = "Security" },
+          ]
+
+          protect_breaking_commits = false
+          filter_commits = true
+          EOF
+            git add cliff.toml
+          fi
+
+          touch CHANGELOG.md
+          git-cliff --config cliff.toml --tag "v$RELEASE_VERSION" --unreleased --prepend CHANGELOG.md
+          git-cliff --config cliff.toml --tag "v$RELEASE_VERSION" --unreleased --strip header > RELEASE_NOTES.md
+
+          git add CHANGELOG.md
+          git commit -m "chore: Changelog for Release $RELEASE_VERSION"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy
+        env:
+          MAVEN_ARGS_INPUT: ${{ inputs.maven_args }}
+          MAVEN_USERNAME: ${{ secrets.OSS_SONATYPE_USER }}
+          MAVEN_PASSWORD: ${{ secrets.OSS_SONATYPE_PASS }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.OSS_SONATYPE_GPG_PASSPHRASE }}
+        run: |
+          read -ra extraArgs <<< "$MAVEN_ARGS_INPUT"
+          $MVN -B -ntp clean deploy "${extraArgs[@]}"
+
+      - name: Prepare next development iteration
+        env:
+          NEXT_VERSION: ${{ steps.version.outputs.next_version }}
+        run: |
+          $MVN -B -ntp -q versions:set -DnewVersion="$NEXT_VERSION" -DgenerateBackupPoms=false -DprocessAllModules=true
+          git add -u
+          git commit -m "chore: Prepare next development iteration $NEXT_VERSION"
+
+      # The deploy can outlast the 1h token minted at job start.
+      - name: Refresh GitHub App token
+        uses: actions/create-github-app-token@v3
+        id: app-token-push
+        with:
+          client-id: ${{ inputs.client_id }}
+          private-key: ${{ secrets.CI_PRIVATE_KEY }}
+
+      - name: Push commits
+        env:
+          GH_TOKEN: ${{ steps.app-token-push.outputs.token }}
+          DEFAULT_BRANCH: ${{ inputs.default_branch }}
+        run: git push "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:${DEFAULT_BRANCH}"
+
+      - name: Create Release on GH
+        env:
+          GH_TOKEN: ${{ steps.app-token-push.outputs.token }}
+          RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
+          RELEASE_SHA: ${{ steps.release_commit.outputs.sha }}
+        run: |
+          gh release create "v$RELEASE_VERSION" \
+            ${{ inputs.draft_release && '--draft' || '' }} \
+            --target "$RELEASE_SHA" \
+            --title "$RELEASE_VERSION" \
+            --notes-file RELEASE_NOTES.md
