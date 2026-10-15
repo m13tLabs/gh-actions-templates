@@ -87,6 +87,11 @@ jobs:
 
 Secret: `ANSIBLE_GALAXY_API_TOKEN`.
 
+The import goes through `ansible-galaxy role import` (the triggering tag is passed as
+`--branch`), not a raw `curl`. The legacy `/api/v1/imports/` endpoint expects
+`github_user`/`github_repo` and returns an HTML 500 for anything else. `curl` without `--fail`
+also exits 0 on a 500, so a failed import would still show a green job.
+
 ## docker-ci.yml
 
 `actionlint`, then `hadolint` plus a single-arch `docker buildx` build (loaded and
@@ -220,7 +225,9 @@ jobs:
 | `release_sha` | SHA of the release commit that was deployed. The branch head is the next `-SNAPSHOT` commit |
 
 Secrets: `CI_PRIVATE_KEY`, `OSS_SONATYPE_USER` / `OSS_SONATYPE_PASS` (Central Portal user
-token), `OSS_SONATYPE_GPG_PRIVATE_KEY` / `OSS_SONATYPE_GPG_PASSPHRASE`.
+token), `OSS_SONATYPE_GPG_PRIVATE_KEY` / `OSS_SONATYPE_GPG_PASSPHRASE`. Callers outside
+`m13tLabs` (e.g. `ContinuousSecurityTooling/zap-java`) must map each secret explicitly, see
+[Known gotchas](#known-gotchas).
 
 How it's built:
 
@@ -254,6 +261,10 @@ Schema and tooling:
 - `workflow_call` inputs only support `type: boolean | number | string`. `type: choice` and
   `options:` are `workflow_dispatch`-only. Using them on a `workflow_call` input makes the
   workflow invalid, and it won't run at all when called.
+- `secrets: inherit` only passes secrets to a reusable workflow in the caller's own
+  organization/enterprise. Callers in another org (zap-java in `ContinuousSecurityTooling`)
+  get none and fail with `Secret X is required, but not provided while calling`. Map each
+  secret explicitly under `secrets:` there. That works because this repo is public.
 - An input can't be both `required: true` and carry a `default:`. The default is unreachable
   and actionlint flags it.
 - `actions/create-github-app-token@v3` authenticates with **either** `app-id` **or**
