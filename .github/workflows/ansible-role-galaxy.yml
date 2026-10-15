@@ -12,9 +12,18 @@ jobs:
     name: Publish to Ansible Galaxy
     runs-on: ubuntu-latest
     steps:
+      - name: Install ansible-core
+        run: pipx install ansible-core
+
+      # The legacy /api/v1/imports/ endpoint wants github_user/github_repo; any other payload
+      # 500s. ansible-galaxy sends the right one, waits for the import and fails on errors.
       - name: Trigger Ansible Galaxy Import
+        env:
+          GALAXY_API_KEY: ${{ secrets.ANSIBLE_GALAXY_API_TOKEN }}
+          GITHUB_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPO: ${{ github.event.repository.name }}
         run: |
-          curl -X POST "https://galaxy.ansible.com/api/v1/imports/" \
-            -H "Authorization: Token ${{ secrets.ANSIBLE_GALAXY_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"repository\": \"https://github.com/${{ github.repository }}\"}"
+          ansible-galaxy role import \
+            --api-key "$GALAXY_API_KEY" \
+            --branch "$GITHUB_REF_NAME" \
+            "$GITHUB_OWNER" "$GITHUB_REPO"
