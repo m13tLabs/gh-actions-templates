@@ -14,6 +14,7 @@ Reusable GitHub Actions workflows shared across m13tLabs repos, called via `uses
 | [`docker-ci.yml`](.github/workflows/docker-ci.yml) | `hadolint`, build and smoke test per Dockerfile, multi-arch build check |
 | [`docker-release.yml`](.github/workflows/docker-release.yml) | Version bump, changelog, multi-arch build and push, provenance attestation, GitHub Release |
 | [`maven-release.yml`](.github/workflows/maven-release.yml) | Version bump, changelog, signed deploy to Maven Central, next `-SNAPSHOT`, GitHub Release |
+| [`gradle-release.yml`](.github/workflows/gradle-release.yml) | Version from tags, changelog, publish to Maven Central and/or the Gradle Plugin Portal, GitHub Release |
 
 ## Usage
 
@@ -35,7 +36,8 @@ push to a protected default branch, and need `secrets: inherit`:
 | `CI_PRIVATE_KEY` | Release workflows (GitHub App private key) |
 | `ANSIBLE_GALAXY_API_TOKEN` | `ansible-role-galaxy.yml` |
 | `DOCKER_HUB_USER` / `DOCKER_HUB_TOKEN` | Docker workflows with `dockerhub: true` |
-| `OSS_SONATYPE_USER` / `OSS_SONATYPE_PASS` / `OSS_SONATYPE_GPG_PRIVATE_KEY` / `OSS_SONATYPE_GPG_PASSPHRASE` | `maven-release.yml` |
+| `OSS_SONATYPE_USER` / `OSS_SONATYPE_PASS` / `OSS_SONATYPE_GPG_PRIVATE_KEY` / `OSS_SONATYPE_GPG_PASSPHRASE` | `maven-release.yml`, `gradle-release.yml` |
+| `GRADLE_PUBLISH_KEY` / `GRADLE_PUBLISH_SECRET` | `gradle-release.yml` with `publishPlugins` |
 
 Caller examples, inputs and outputs for every workflow are in
 [.github/DEVELOPER.md](.github/DEVELOPER.md).
