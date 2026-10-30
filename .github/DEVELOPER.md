@@ -11,6 +11,7 @@ is each workflow's `on.workflow_call.inputs`. Keep the tables below in sync with
 - [docker-ci.yml](#docker-ciyml)
 - [docker-release.yml](#docker-releaseyml)
 - [maven-release.yml](#maven-releaseyml)
+- [gradle-release.yml](#gradle-releaseyml)
 - [Repo design](#repo-design)
 - [Known gotchas](#known-gotchas)
 
@@ -238,6 +239,81 @@ How it's built:
   `${env.MAVEN_PASSWORD}` and imports the GPG key. `maven-gpg-plugin` (3.2+) reads
   `MAVEN_GPG_PASSPHRASE` from the environment.
 
+## gradle-release.yml
+
+Manual release of a Gradle project to Maven Central and/or the Gradle Plugin Portal: computes
+the version, updates `CHANGELOG.md` via `git-cliff`, runs `gradle_tasks` with
+`-P<version_property>=<version>`, pushes the changelog commit and creates a GitHub Release
+targeting it. Uses `./gradlew` when present, else `gradle`.
+
+Unlike `maven-release.yml` nothing is bumped in a file: the build reads its version from the
+project property (e.g. `version = findProperty('releaseVersion') ?: '0.0.1-SNAPSHOT'`). The
+base is the highest `vX.Y.Z` among git tags **and** GitHub release tags (drafts have no git
+tag yet), `0.0.0` if none: `patch` releases `X.Y.(Z+1)`, `minor` `X.(Y+1).0`, `major`
+`(X+1).0.0`. The run fails early if `v<version>` exists as a tag or release.
+
+Publishing stays in the caller's build: `com.vanniktech.maven.publish` for Central (reads
+`ORG_GRADLE_PROJECT_mavenCentralUsername`/`…Password`/`signingInMemoryKey`/
+`signingInMemoryKeyPassword`) and `com.gradle.plugin-publish` for the Plugin Portal (reads
+`GRADLE_PUBLISH_KEY`/`GRADLE_PUBLISH_SECRET`). The workflow exports each of these only when its
+secret is set.
+
+```yaml
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        type: choice
+        default: patch
+        options: [patch, minor, major, custom]
+      custom_version:
+        type: string
+
+jobs:
+  release:
+    uses: m13tLabs/gh-actions-templates/.github/workflows/gradle-release.yml@main
+    with:
+      release_type: ${{ inputs.release_type }}
+      custom_version: ${{ inputs.custom_version }}
+      client_id: ${{ vars.CI_CLIENT_ID }}
+      gradle_tasks: 'publishAndReleaseToMavenCentral publishPlugins'
+      gradle_args: '-x test'
+    secrets: inherit
+```
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `client_id` | (required) | GitHub App client ID, e.g. `${{ vars.CI_CLIENT_ID }}` |
+| `release_type` | `"patch"` | `patch`, `minor`, `major` or `custom` (see above for the base) |
+| `custom_version` | `""` | Explicit version, required when `release_type: custom` |
+| `default_branch` | `"develop"` | Branch released from and pushed back to |
+| `java_version` | `"25"` | JDK passed to `actions/setup-java` |
+| `java_distribution` | `"temurin"` | JDK distribution passed to `actions/setup-java` |
+| `version_property` | `"releaseVersion"` | Project property the version is passed as (`-P<name>=X.Y.Z`) |
+| `gradle_tasks` | `"publishAndReleaseToMavenCentral"` | Space-separated publish tasks; add `publishPlugins` for the Plugin Portal |
+| `gradle_args` | `""` | Extra arguments for every Gradle run, e.g. `-x test` |
+| `draft_release` | `true` | Create the GitHub Release as a draft |
+
+| Output | Description |
+| --- | --- |
+| `release_version` | The released version (`X.Y.Z`) |
+| `release_sha` | SHA of the changelog commit that was published (also the branch head) |
+
+Secrets: `CI_PRIVATE_KEY` (required). Optional: `OSS_SONATYPE_USER` / `OSS_SONATYPE_PASS` /
+`OSS_SONATYPE_GPG_PRIVATE_KEY` / `OSS_SONATYPE_GPG_PASSPHRASE` for Central,
+`GRADLE_PUBLISH_KEY` / `GRADLE_PUBLISH_SECRET` for the Plugin Portal. Callers outside
+`m13tLabs` (e.g. `ContinuousSecurityTooling/zap-gradle-plugin`) must map them explicitly, see
+[Known gotchas](#known-gotchas).
+
+How it's built:
+
+- When `gradle_tasks` contains `publishPlugins`, `publishPlugins --validate-only` runs before
+  anything is published. The Plugin Portal validates metadata only server-side, and
+  zap-gradle-plugin's release failed on `publishPlugins` (tags `code quality`, `dev ops`)
+  *after* `publishAndReleaseToMavenCentral` had already run.
+- An empty `ORG_GRADLE_PROJECT_signingInMemoryKey` still defines the property, so signing
+  would fail instead of being skipped. Credentials are written to `$GITHUB_ENV` only when set.
+
 ## Repo design
 
 `pipeline.yml` runs actionlint and calls `ansible-role-ci.yml` against a minimal, throwaway
@@ -296,6 +372,8 @@ Tokens:
 
 Releases:
 
+- Gradle Plugin Portal tags must start with an alphanumeric character and contain only
+  `[A-Za-z0-9._+-]` (max 50 chars), so no spaces: `code-quality`, not `code quality`.
 - Generate `RELEASE_NOTES.md` with `git-cliff --tag v<new> --unreleased`, **not**
   `--latest`. `--latest` renders the newest *existing* tag's section and ignores `--tag`, so
   `ai-agent-for-gitlab`'s 0.2.2 Release shipped 0.2.0's notes.
