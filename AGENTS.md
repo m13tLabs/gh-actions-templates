@@ -1,7 +1,8 @@
 # gh-actions-templates
 
-Reusable GitHub Actions workflows (`workflow_call`) shared across m13tLabs repos: Ansible
-role repos and Docker image repos.
+Reusable GitHub Actions workflows (`workflow_call`) shared across m13tLabs repos (Ansible
+roles, Docker images, Maven/Gradle libraries) and some `ContinuousSecurityTooling` repos
+(`zap-java`, `keycloak-auditor`).
 
 - [README.md](README.md): what each workflow is for, minimal caller usage.
 - [.github/DEVELOPER.md](.github/DEVELOPER.md): per-template behavior, inputs/outputs,
@@ -11,8 +12,10 @@ role repos and Docker image repos.
 
 ## Repo layout
 
-- `.github/workflows/ansible-role-{ci,release,galaxy}.yml`, `docker-{ci,release}.yml`: the
-  templates (the product).
+- `.github/workflows/ansible-role-{ci,release,galaxy}.yml`, `docker-{ci,release}.yml`,
+  `maven-release.yml`, `gradle-release.yml`: the templates (the product).
+- `.github/workflows/npm-release.yml`: work in progress, still a `workflow_dispatch`
+  workflow, not callable yet and not documented in DEVELOPER.md.
 - `.github/workflows/pipeline.yml`: actionlint + `self-test` (`ansible-role-ci.yml` against
   the fixture role), on every push/PR.
 - `tasks/`, `meta/`, `molecule/default/`, `tests/e2e/`, `.ansible-lint`: a throwaway fixture
@@ -28,3 +31,7 @@ role repos and Docker image repos.
   DEVELOPER.md.
 - Keep the QEMU setup of `docker-ci.yml` and `docker-release.yml` in sync.
 - Never splice `${{ inputs.* }}` into a `run:` script; pass it through `env:`.
+- Release templates with a `bump_command` input (`docker-release.yml`, `maven-release.yml`)
+  must run it via `env` + `bash -euo pipefail -c` followed by `git add -u`. Keep them alike.
+- Callers outside `m13tLabs` can't use `secrets: inherit`; document every secret a template
+  needs, since those callers map each one explicitly.

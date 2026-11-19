@@ -217,6 +217,7 @@ jobs:
 | `java_version` | `"25"` | JDK passed to `actions/setup-java` |
 | `java_distribution` | `"temurin"` | JDK distribution passed to `actions/setup-java` |
 | `maven_args` | `"-Pcentral-publish"` | Extra arguments for `mvn clean deploy` |
+| `bump_command` | `""` | Shell run after `versions:set` with `$RELEASE_VERSION` set; tracked files it changes join the release commit |
 | `server_id` | `"central"` | `settings.xml` server id for the Central credentials (`publishingServerId`) |
 | `draft_release` | `true` | Create the GitHub Release as a draft |
 
@@ -238,6 +239,11 @@ How it's built:
 - `actions/setup-java` writes `settings.xml` with `${env.MAVEN_USERNAME}` /
   `${env.MAVEN_PASSWORD}` and imports the GPG key. `maven-gpg-plugin` (3.2+) reads
   `MAVEN_GPG_PASSPHRASE` from the environment.
+- `bump_command` works like `docker-release.yml`'s: `env` + `bash -euo pipefail -c`, then
+  `git add -u`, so only tracked files join the release commit. The next `-SNAPSHOT` commit
+  only touches the poms; whatever `bump_command` pinned keeps the release version.
+  `keycloak-auditor` uses it to bump its npm SDK (`sdk/package.json`) and publishes the SDK and
+  release assets from a follow-up job that checks out `release_sha`.
 
 ## gradle-release.yml
 

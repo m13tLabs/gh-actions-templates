@@ -43,6 +43,16 @@ on:
         type: string
         required: false
         default: '-Pcentral-publish'
+      bump_command:
+        description: >-
+          Optional shell run right after the pom versions are set, with
+          $RELEASE_VERSION set, to pin the release version elsewhere (e.g. an
+          npm SDK's package.json). Every tracked file it modifies joins the
+          release commit. It must fail (non-zero exit) when a file it expects
+          to update didn't match.
+        type: string
+        required: false
+        default: ''
       server_id:
         description: 'settings.xml server id the Central credentials are written under (publishingServerId of central-publishing-maven-plugin)'
         type: string
@@ -189,8 +199,14 @@ jobs:
       - name: Bump version
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
+          BUMP_COMMAND: ${{ inputs.bump_command }}
         run: |
           $MVN -B -ntp -q versions:set -DnewVersion="$RELEASE_VERSION" -DgenerateBackupPoms=false -DprocessAllModules=true
+
+          if [ -n "$BUMP_COMMAND" ]; then
+            bash -euo pipefail -c "$BUMP_COMMAND"
+          fi
+
           git add -u
           git commit -m "Release $RELEASE_VERSION"
 
