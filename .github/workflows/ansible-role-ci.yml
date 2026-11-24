@@ -37,7 +37,7 @@ jobs:
         id: python
         run: |
           case "${{ matrix.ansible_version }}" in
-            2.14|2.15) echo "version=3.9" >> "$GITHUB_OUTPUT" ;;
+            2.14|2.15) echo "version=3.10" >> "$GITHUB_OUTPUT" ;;
             2.16|2.17) echo "version=3.10" >> "$GITHUB_OUTPUT" ;;
             2.18|2.19) echo "version=3.11" >> "$GITHUB_OUTPUT" ;;
             *) echo "version=3.14" >> "$GITHUB_OUTPUT" ;;
@@ -83,7 +83,7 @@ jobs:
         if: steps.detect.outputs.exists == 'true'
         run: |
           case "${{ matrix.ansible_version }}" in
-            2.14|2.15) echo "version=3.9" >> "$GITHUB_OUTPUT" ;;
+            2.14|2.15) echo "version=3.10" >> "$GITHUB_OUTPUT" ;;
             2.16|2.17) echo "version=3.10" >> "$GITHUB_OUTPUT" ;;
             2.18|2.19) echo "version=3.11" >> "$GITHUB_OUTPUT" ;;
             *) echo "version=3.14" >> "$GITHUB_OUTPUT" ;;
