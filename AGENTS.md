@@ -2,7 +2,7 @@
 
 Reusable GitHub Actions workflows (`workflow_call`) shared across m13tLabs repos (Ansible
 roles, Docker images, Maven/Gradle libraries) and some `ContinuousSecurityTooling` repos
-(`zap-java`, `keycloak-auditor`).
+(`zap-java`, `keycloak-auditor`, `keycloak-reporter`).
 
 - [README.md](README.md): what each workflow is for, minimal caller usage.
 - [.github/DEVELOPER.md](.github/DEVELOPER.md): per-template behavior, inputs/outputs,
