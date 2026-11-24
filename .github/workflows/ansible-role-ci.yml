@@ -114,7 +114,7 @@ jobs:
 
           [galaxy_server.release_galaxy]
           url = https://galaxy.ansible.com/
-          api_version = v3
+          api_version = 3
           EOF
 
       - name: Run molecule test
