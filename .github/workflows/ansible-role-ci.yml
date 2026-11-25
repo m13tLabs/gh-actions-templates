@@ -104,19 +104,6 @@ jobs:
           [ -f molecule/default/requirements.txt ] && pip install -r molecule/default/requirements.txt
           true
 
-      - name: Configure Ansible Galaxy for API v3
-        if: steps.detect.outputs.exists == 'true'
-        run: |
-          mkdir -p ~/.ansible
-          cat > ~/.ansible.cfg << 'EOF'
-          [galaxy]
-          server_list = release_galaxy
-
-          [galaxy_server.release_galaxy]
-          url = https://galaxy.ansible.com/
-          api_version = 3
-          EOF
-
       - name: Run molecule test
         if: steps.detect.outputs.exists == 'true'
         run: molecule test
