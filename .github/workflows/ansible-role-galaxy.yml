@@ -33,7 +33,7 @@ jobs:
           }
           echo "Import task ID: ${TASK_ID}"
 
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             sleep 5
             TASK=$(curl -s "https://galaxy.ansible.com/api/v1/imports/${TASK_ID}/")
             STATE=$(echo "${TASK}" | python3 -I -c "import sys,json; print(json.load(sys.stdin)['state'])")
