@@ -12,18 +12,38 @@ jobs:
     name: Publish to Ansible Galaxy
     runs-on: ubuntu-latest
     steps:
-      - name: Install ansible-core
-        run: pipx install ansible-core
-
-      # The legacy /api/v1/imports/ endpoint wants github_user/github_repo; any other payload
-      # 500s. ansible-galaxy sends the right one, waits for the import and fails on errors.
+      # POST /api/v1/imports/ directly — ansible-galaxy role import began sending a payload
+      # that Galaxy's backend rejects with HTTP 500 in recent ansible-core versions.
       - name: Trigger Ansible Galaxy Import
         env:
-          GALAXY_API_KEY: ${{ secrets.ANSIBLE_GALAXY_API_TOKEN }}
+          GALAXY_API_TOKEN: ${{ secrets.ANSIBLE_GALAXY_API_TOKEN }}
           GITHUB_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO: ${{ github.event.repository.name }}
         run: |
-          ansible-galaxy role import \
-            --api-key "$GALAXY_API_KEY" \
-            --branch "$GITHUB_REF_NAME" \
-            "$GITHUB_OWNER" "$GITHUB_REPO"
+          echo "Triggering Galaxy import for ${GITHUB_OWNER}/${GITHUB_REPO}@${GITHUB_REF_NAME}..."
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Token ${GALAXY_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "https://galaxy.ansible.com/api/v1/imports/" \
+            -d "{\"github_user\":\"${GITHUB_OWNER}\",\"github_repo\":\"${GITHUB_REPO}\",\"github_reference\":\"${GITHUB_REF_NAME}\"}")
+
+          TASK_ID=$(echo "${RESPONSE}" | python3 -I -c "import sys,json; print(json.load(sys.stdin)['id'])") || {
+            echo "Failed to start import. Response: ${RESPONSE}"
+            exit 1
+          }
+          echo "Import task ID: ${TASK_ID}"
+
+          for i in $(seq 1 60); do
+            sleep 5
+            TASK=$(curl -s "https://galaxy.ansible.com/api/v1/imports/${TASK_ID}/")
+            STATE=$(echo "${TASK}" | python3 -I -c "import sys,json; print(json.load(sys.stdin)['state'])")
+            echo "State: ${STATE}"
+            case "${STATE}" in
+              SUCCESS) echo "Import succeeded."; exit 0 ;;
+              FAILED)  echo "Import failed."; exit 1 ;;
+              PENDING|RUNNING) ;;
+              *) echo "Unexpected state: ${STATE}"; exit 1 ;;
+            esac
+          done
+          echo "Import timed out after 5 minutes."
+          exit 1

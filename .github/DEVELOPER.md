@@ -88,10 +88,11 @@ jobs:
 
 Secret: `ANSIBLE_GALAXY_API_TOKEN`.
 
-The import goes through `ansible-galaxy role import` (the triggering tag is passed as
-`--branch`), not a raw `curl`. The legacy `/api/v1/imports/` endpoint expects
-`github_user`/`github_repo` and returns an HTML 500 for anything else. `curl` without `--fail`
-also exits 0 on a 500, so a failed import would still show a green job.
+The import posts directly to `/api/v1/imports/` via `curl`. Recent `ansible-core` versions
+changed the payload sent by `ansible-galaxy role import` in a way that Galaxy's backend rejects
+with HTTP 500, so we bypass the CLI and send `github_user`/`github_repo`/`github_reference`
+directly. The step polls `/api/v1/imports/<id>/` until state is `SUCCESS` or `FAILED` (up to
+5 min), so a failed import always fails the job.
 
 ## docker-ci.yml
 
